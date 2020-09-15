@@ -14,7 +14,8 @@ class MainWindow(QMainWindow):
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
         self.current_date = pd.to_datetime("today")
-        self.reference_date = self.current_date
+        self.reference_date = self.current_date.replace(
+            hour=0, minute=0, second=0, microsecond=0)
         self.ui.nextWeekButton.clicked.connect(self.show_next_week)
         self.ui.prevWeekButton.clicked.connect(self.show_prev_week)
         self.ui.currentWeekButton.clicked.connect(self.show_current_week)
@@ -67,7 +68,6 @@ class MainWindow(QMainWindow):
             table.setItem(row, num_cols - 1, new_item)
 
     def create_week_table_widget(self):
-        # self.ui.weekTableWidget.setItemDelegate(TimeSheetDelegate())
         self.set_column_headers()
         self.update_table_content()
 
@@ -163,7 +163,7 @@ class MainWindow(QMainWindow):
         if filename is not None:
             df_dict = {'title': [], 'category': [],
                        'start': [], 'end': [], 'day_name': []}
-            with open(filename, 'r') as f:
+            with open(filename, 'r', encoding='utf8') as f:
                 for line in f:
                     line = line.lstrip().rstrip()
                     if line.startswith('BEGIN:VEVENT'):
@@ -177,12 +177,18 @@ class MainWindow(QMainWindow):
                         title = ''.join(line.split(':')[1:])
                     elif line.startswith('DTSTART;'):
                         iso_start = ''.join(line.split(':')[1:])
-                        dt_start = pd.Timestamp(datetime.datetime.strptime(
-                            iso_start, self.ics_iso_fmt))
+                        try:
+                            dt_start = pd.Timestamp(datetime.datetime.strptime(
+                                iso_start, self.ics_iso_fmt))
+                        except:
+                            continue
                     elif line.startswith('DTEND;'):
                         iso_end = ''.join(line.split(':')[1:])
-                        dt_end = pd.Timestamp(datetime.datetime.strptime(
-                            iso_end, self.ics_iso_fmt))
+                        try:
+                            dt_end = pd.Timestamp(datetime.datetime.strptime(
+                                iso_end, self.ics_iso_fmt))
+                        except:
+                            continue
                     if line.startswith('END:VEVENT'):
                         if dt_start is not None and dt_end is not None and category is not None:
                             df_dict['title'].append(title)
