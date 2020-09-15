@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+dist/
+build/
+*.egg-info
+
+# Pyside2
+*_ui.py
+*_rc.py
+
+# IDE Specific
+tempCodeRunnerFile.py
+.vscode/
