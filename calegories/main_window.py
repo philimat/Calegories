@@ -1,12 +1,14 @@
-from PySide2.QtWidgets import QMainWindow, QHeaderView, QAction, QFileDialog, QTableWidgetItem
-from PySide2.QtCore import Qt
-from resources.ui.main_window_ui import Ui_MainWindow
+import sys
+import time
 import datetime
 import pandas as pd
 import numpy as np
+from PySide2 import QtWidgets, QtCore
+from resources.ui.main_window_ui import Ui_MainWindow
+from time_sheet_table_model import TimeSheetTableModel
 
 
-class MainWindow(QMainWindow):
+class MainWindow(QtWidgets.QMainWindow):
     """ Main Window of Calegories """
 
     def __init__(self):
@@ -26,50 +28,7 @@ class MainWindow(QMainWindow):
         self.ics_iso_fmt = "%Y%m%dT%H%M%S"
         self.events_df = None
         self.displayed_week = []
-        self.create_week_table_widget()
-        self.ui.weekTableWidget.itemChanged.connect(self.handle_item_changed)
-
-    def handle_item_changed(self, item):
-        table = self.ui.weekTableWidget
-        index = table.indexFromItem(item)
-        row = index.row()
-        col = index.column()
-        day_total = 0
-        week_total = 0
-        num_rows = table.rowCount()
-        num_cols = table.columnCount()
-        flags = Qt.ItemFlags()
-        flags != Qt.ItemIsEditable
-
-        if row != num_rows - 1:
-            for i in range(num_rows - 1):
-                item = table.item(i, col)
-                if item is None:
-                    break
-                else:
-                    update = float(item.text())
-                    day_total += update
-
-            new_item = QTableWidgetItem(f'{day_total}')
-            new_item.setFlags(flags)
-            table.setItem(num_rows - 1, col, new_item)
-
-        if col != num_cols - 1:
-            for j in range(num_cols - 1):
-                item = table.item(row, j)
-                if item is None:
-                    break
-                else:
-                    update = float(item.text())
-                    week_total += update
-
-            new_item = QTableWidgetItem(f'{week_total}')
-            new_item.setFlags(flags)
-            table.setItem(row, num_cols - 1, new_item)
-
-    def create_week_table_widget(self):
-        self.set_column_headers()
-        self.update_table_content()
+        self.init_week_df()
 
     def find_day_name_index(self, day_name):
         for i, day in enumerate(self.weekdays):
@@ -77,7 +36,15 @@ class MainWindow(QMainWindow):
                 idx = i
                 return idx
 
-    def set_column_headers(self):
+    def format_table_view(self):
+        table_view = self.ui.weekTableView
+        num_cols = table_view.model().columnCount()
+        for col in range(1, num_cols - 1):
+            table_view.setItemDelegateForColumn(
+                col, table_view._delegates['PositiveDoubleDelegate'])
+        self.ui.weekTableView.model().dataChanged.connect(self.update_totals)
+
+    def init_week_df(self):
         week_start_day = 0
         pd_weekdays = ['Monday', 'Tuesday', 'Wednesday',
                        'Thursday', 'Friday', 'Saturday', 'Sunday']
@@ -92,73 +59,79 @@ class MainWindow(QMainWindow):
                       for date_obj in self.displayed_week]
 
         last_column = ['Week Total']
-        first_columns = [
+        first_column = 'Category'
+        middle_columns = [
             f'{self.weekdays[i]}\n{strf_dates[i]}' for i in range(num_weekdays)]
-        columns = first_columns + last_column
-        self.ui.weekTableWidget.setColumnCount(len(columns))
-        self.ui.weekTableWidget.setHorizontalHeaderLabels(columns)
-        self.ui.weekTableWidget.horizontalHeader().setSectionResizeMode(0,
-                                                                        QHeaderView.Stretch)
-        self.ui.weekTableWidget.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeToContents)
+        df_dict = {}
+        df_dict[first_column] = 'Day Total'
+        for key in middle_columns + last_column:
+            df_dict[key] = [0.0]
+        week_df = pd.DataFrame(df_dict)
+        week_df.set_index(first_column)
+        model = TimeSheetTableModel(week_df)
+        self.ui.weekTableView.setModel(model)
+        self.ui.weekTableView.horizontalHeader().setSectionResizeMode(0,
+                                                                      QtWidgets.QHeaderView.Stretch)
+        self.ui.weekTableView.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.ResizeToContents)
+        self.format_table_view()
 
-    def refresh_table_cells(self):
-        table = self.ui.weekTableWidget
-        num_cols = table.columnCount()
-        num_rows = table.rowCount()
-        for col in range(num_cols):
-            for row in range(num_rows):
-                item = QTableWidgetItem(f'{0.0}')
-                if row == (num_rows - 1) or col == (num_cols - 1):
-                    flags = Qt.ItemFlags()
-                    flags != Qt.ItemIsEditable
-                    item.setFlags(flags)
-                table.setItem(row, col, item)
-
-    def update_table_content(self):
+    def update_week_df(self):
+        self.init_week_df()
         if self.events_df is not None:
             start_date = self.displayed_week[0]
             end_date = self.displayed_week[-1]
             filter1 = self.events_df['start'] >= start_date
             filter2 = self.events_df['start'] <= end_date
             df = self.events_df.where(filter1 & filter2).dropna()
-            rows = pd.unique(df['category'])
-            self.ui.weekTableWidget.setRowCount(len(rows) + 1)
-            self.ui.weekTableWidget.setVerticalHeaderLabels(
-                list(rows) + ['Total'])
-            self.refresh_table_cells()
+            categories = pd.unique(df['category'])
+            model = self.ui.weekTableView.model()
+            columns = model._df.columns
+            categories_df_dict = {}
+            for i, column in enumerate(columns):
+                if i == 0:
+                    categories_df_dict[column] = categories
+                else:
+                    categories_df_dict[column] = len(categories) * [0.0]
+
+            categories_df = pd.DataFrame(categories_df_dict)
             category_day_df = df.groupby(['category', 'day_name']).sum()
             for i in range(category_day_df.shape[0]):
                 day_name = category_day_df.index[i][-1]
                 category_name = category_day_df.index[i][0]
-                k = np.argwhere(category_name == rows).flatten()[0]
+                k = np.argwhere(category_name == categories).flatten()[0]
                 j = self.find_day_name_index(day_name)
                 num = category_day_df['duration'].iloc[i]
-                item = QTableWidgetItem(f'{num}')
-                self.ui.weekTableWidget.setItem(k, j, item)
-        else:
-            self.ui.weekTableWidget.setRowCount(1)
-            self.ui.weekTableWidget.setVerticalHeaderLabels(['Day Total'])
-            self.refresh_table_cells()
+                categories_df.iat[k, j + 1] = num
+            full_df = categories_df.append(model._df, ignore_index=True)
+            model = TimeSheetTableModel(full_df)
+            self.ui.weekTableView.setModel(model)
+            self.update_totals()
+            self.format_table_view()
+
+    def update_totals(self):
+        df = self.ui.weekTableView.model()._df
+        week_totals = df.drop(df.columns[-1], axis=1).sum(axis=1)
+        df[df.columns[-1]] = week_totals
+        day_totals = df.drop(df.shape[0] - 1, axis=0).sum(axis=0)
+        for j in range(1, df.shape[1]):
+            df.iat[df.shape[0] - 1, j] = day_totals[j]
 
     def show_current_week(self):
         self.reference_date = self.current_date
-        self.set_column_headers()
-        self.update_table_content()
+        self.update_week_df()
 
     def show_next_week(self):
         self.reference_date += datetime.timedelta(weeks=1)
-        self.set_column_headers()
-        self.update_table_content()
+        self.update_week_df()
 
     def show_prev_week(self):
         self.reference_date -= datetime.timedelta(weeks=1)
-        self.set_column_headers()
-        self.update_table_content()
+        self.update_week_df()
 
     def load_ics(self):
-        options = QFileDialog.Options()
-        filename, _ = QFileDialog.getOpenFileName(
+        options = QtWidgets.QFileDialog.Options()
+        filename, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open", "", " ICS (*.ics)", options=options)
         if filename is not None:
             df_dict = {'title': [], 'category': [],
@@ -205,4 +178,4 @@ class MainWindow(QMainWindow):
                 else:
                     self.events_df = self.events_df.append(
                         df, ignore_index=True)
-        self.update_table_content()
+        self.update_week_df()

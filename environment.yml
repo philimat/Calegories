@@ -1,0 +1,49 @@
+name: calegories
+channels:
+  - defaults
+dependencies:
+  - ca-certificates=2020.7.22=0
+  - certifi=2020.6.20=py38_0
+  - libcxx=10.0.0=1
+  - libedit=3.1.20191231=h1de35cc_1
+  - libffi=3.3=hb1e8313_2
+  - ncurses=6.2=h0a44026_1
+  - openssl=1.1.1g=h1de35cc_0
+  - pip=20.2.2=py38_0
+  - python=3.8.5=h26836e1_0
+  - readline=8.0=h1de35cc_0
+  - setuptools=49.6.0=py38_0
+  - sqlite=3.33.0=hffcf06c_0
+  - tk=8.6.10=hb0a8c7a_0
+  - wheel=0.35.1=py_0
+  - xz=5.2.5=h1de35cc_0
+  - zlib=1.2.11=h1de35cc_3
+  - pip:
+    - astroid==2.4.2
+    - attrs==20.1.0
+    - autopep8==1.5.4
+    - bump2version==1.0.0
+    - iniconfig==1.0.1
+    - isort==5.4.2
+    - lazy-object-proxy==1.4.3
+    - mccabe==0.6.1
+    - more-itertools==8.4.0
+    - numpy==1.19.2
+    - packaging==20.4
+    - pandas==1.1.2
+    - pluggy==0.13.1
+    - py==1.9.0
+    - pycodestyle==2.6.0
+    - pylint==2.6.0
+    - pyparsing==2.4.7
+    - pyside2==5.15.0
+    - pytest==6.0.1
+    - python-dateutil==2.8.1
+    - pytz==2020.1
+    - rope==0.17.0
+    - shiboken2==5.15.0
+    - six==1.15.0
+    - toml==0.10.1
+    - wrapt==1.12.1
+prefix: /Users/mattphilippi/opt/anaconda3/envs/calegories
+

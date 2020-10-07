@@ -84,7 +84,7 @@
         </widget>
        </item>
        <item>
-        <widget class="TimeSheetTableWidget" name="weekTableWidget"/>
+        <widget class="TimeSheetTableView" name="weekTableView"/>
        </item>
       </layout>
      </widget>
@@ -123,9 +123,9 @@
  </widget>
  <customwidgets>
   <customwidget>
-   <class>TimeSheetTableWidget</class>
-   <extends>QTableWidget</extends>
-   <header>time_sheet_table_widget.h</header>
+   <class>TimeSheetTableView</class>
+   <extends>QTableView</extends>
+   <header>time_sheet_table_view.h</header>
   </customwidget>
  </customwidgets>
  <resources/>
