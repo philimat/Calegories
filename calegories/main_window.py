@@ -1,6 +1,7 @@
 import sys
 import time
 import datetime
+import icalendar
 import pandas as pd
 import numpy as np
 from PySide2 import QtWidgets, QtCore
@@ -15,7 +16,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super(MainWindow, self).__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.current_date = pd.to_datetime("today")
+        self.tz = 'US/Central'
+        self.current_date = pd.to_datetime("today").tz_localize(tz=self.tz)
         self.reference_date = self.current_date.replace(
             hour=0, minute=0, second=0, microsecond=0)
         self.ui.nextWeekButton.clicked.connect(self.show_next_week)
@@ -25,9 +27,17 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.actionLoad_ics.triggered.connect(self.load_ics)
         menu = self.menuBar()
         menu.setNativeMenuBar(False)
-        self.ics_iso_fmt = "%Y%m%dT%H%M%S"
         self.events_df = None
         self.displayed_week = []
+        self.weekday_abbr = {
+            'MO': 'Monday',
+            'TU': 'Tuesday',
+            'WE': 'Wednesday',
+            'TH': 'Thursday',
+            'FR': 'Friday',
+            'SA': 'Saturday',
+            'SU': 'Sunday',
+        }
         self.init_week_df()
 
     def find_day_name_index(self, day_name):
@@ -86,7 +96,7 @@ class MainWindow(QtWidgets.QMainWindow):
             filter1 = self.events_df['start'] >= start_date
             filter2 = self.events_df['start'] <= end_date
             df = self.events_df.where(filter1 & filter2).dropna()
-            categories = pd.unique(df['category'])
+            categories = pd.unique(df['categories'])
             model = self.ui.weekTableView.model()
             columns = model._df.columns
             categories_df_dict = {}
@@ -97,7 +107,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     categories_df_dict[column] = len(categories) * [0.0]
 
             categories_df = pd.DataFrame(categories_df_dict)
-            category_day_df = df.groupby(['category', 'day_name']).sum()
+            category_day_df = df.groupby(['categories', 'day_name']).sum()
             for i in range(category_day_df.shape[0]):
                 day_name = category_day_df.index[i][-1]
                 category_name = category_day_df.index[i][0]
@@ -136,147 +146,109 @@ class MainWindow(QtWidgets.QMainWindow):
         options = QtWidgets.QFileDialog.Options()
         filename, _ = QtWidgets.QFileDialog.getOpenFileName(
             self, "Open", "", " ICS (*.ics)", options=options)
-        if filename is not None:
-            df_dict = {'title': [], 'category': [],
-                       'start': [], 'end': [], 'day_name': []}
-            with open(filename, 'r', encoding='utf8') as f:
-                in_event = False
-                for line in f:
-                    line = line.lstrip().rstrip()
-                    if line.startswith('BEGIN:VEVENT'):
-                        in_event = True
-                        category = None
-                        dt_start = None
-                        dt_end = None
-                        recurrence_data = {}
-                        title = ''
-                        excluded_dates = []
-                    elif in_event:
-                        if line.startswith('RRULE:'):
-                            stripped_line = ''.join(
-                                line.split(':')[1:]).split(';')
-                            for pair in stripped_line:
-                                split_line = pair.split('=')
-                                recurrence_data[split_line[0]] = split_line[1]
-                        elif line.startswith('CATEGORIES:'):
-                            category = ''.join(line.split(':')[1:])
-                        elif line.startswith('SUMMARY:'):
-                            title = ''.join(line.split(':')[1:])
-                        elif line.startswith('DTSTART;'):
-                            iso_start = ''.join(line.split(':')[1:])
-                            try:
-                                dt_start = pd.Timestamp(datetime.datetime.strptime(
-                                    iso_start, self.ics_iso_fmt))
-                            except:
-                                continue
-                        elif line.startswith('DTEND;'):
-                            iso_end = ''.join(line.split(':')[1:])
-                            try:
-                                dt_end = pd.Timestamp(datetime.datetime.strptime(
-                                    iso_end, self.ics_iso_fmt))
-                            except:
-                                continue
-                        elif line.startswith('EXDATE;'):
-                            ex_dates = line.split(':')[-1].split(',')
-                            for ex_date in ex_dates:
-                                try:
-                                    excluded_dates.append(pd.Timestamp(datetime.datetime.strptime(
-                                        ex_date, self.ics_iso_fmt)))
-                                except:
+        if filename is None:
+            return
+        df_dict = {'title': [], 'categories': [],
+                   'start': [], 'end': [], 'day_name': []}
+        with open(filename, 'r', encoding='utf8') as f:
+            calendar = icalendar.Calendar.from_ical(f.read())
+        for component in calendar.walk():
+            if component.name == "VEVENT":
+                categories = component.get('CATEGORIES', None)
+                if categories is not None:
+
+                    title = str(component.get('SUMMARY', ''))
+                    categories = ''.join(
+                        [str(cat) for cat in categories.cats])
+                    dt_start = pd.Timestamp(
+                        component.get('DTSTART', None).dt).tz_convert(tz=self.tz)
+                    dt_end = pd.Timestamp(
+                        component.get('DTEND', None).dt).tz_convert(tz=self.tz)
+                    day_name = dt_start.day_name()
+
+                    df_dict['title'].append(title)
+                    df_dict['categories'].append(categories)
+                    df_dict['start'].append(dt_start)
+                    df_dict['end'].append(dt_end)
+                    df_dict['day_name'].append(day_name)
+
+                    recurrence_data = component.get('RRULE', {})
+                    if recurrence_data:
+                        excluded_dates = component.get('EXDATE', [])
+                        if excluded_dates:
+                            excluded_dates = [pd.Timestamp(
+                                ex_date.dt) for ex_date in excluded_dates.dts]
+                        interval = recurrence_data.get('INTERVAL', [1])[0]
+                        count = recurrence_data.get('COUNT', None)[0]
+                        if count is None:
+                            # Only support events that have counts at this time
+                            break
+                        # check frequency
+                        if recurrence_data['FREQ'][0] == 'DAILY':
+                            i = 0
+                            while i < (count - 1):
+                                dt_start += pd.Timedelta(
+                                    days=interval)
+                                dt_end += pd.Timedelta(days=interval)
+                                if dt_start in excluded_dates:
+                                    i += 1
                                     continue
-                        elif line.startswith('END:VEVENT'):
-                            if dt_start is not None and dt_end is not None and category is not None:
                                 df_dict['title'].append(title)
-                                df_dict['category'].append(category)
+                                df_dict['categories'].append(categories)
                                 df_dict['start'].append(dt_start)
                                 df_dict['end'].append(dt_end)
                                 day_name = dt_end.day_name()
                                 df_dict['day_name'].append(day_name)
-                                if recurrence_data:
-                                    weekday_abbr = {
-                                        'MO': 'Monday',
-                                        'TU': 'Tuesday',
-                                        'WE': 'Wednesday',
-                                        'TH': 'Thursday',
-                                        'FR': 'Friday',
-                                        'SA': 'Saturday',
-                                        'SU': 'Sunday',
-                                    }
-                                    interval = int(
-                                        recurrence_data.get('INTERVAL', 1))
-                                    count = recurrence_data.get('COUNT', None)
-                                    if count is None:
-                                        # Only support events that have counts at this time
-                                        break
-                                    else:
-                                        count = int(count)
-                                    # check frequency
-                                    if recurrence_data['FREQ'] == 'DAILY':
-                                        i = 0
-                                        while i < (count - 1):
-                                            dt_start += pd.Timedelta(
-                                                days=interval)
-                                            dt_end += pd.Timedelta(days=interval)
-                                            if dt_start in excluded_dates:
-                                                i += 1
-                                                continue
-                                            df_dict['title'].append(title)
-                                            df_dict['category'].append(category)
-                                            df_dict['start'].append(dt_start)
-                                            df_dict['end'].append(dt_end)
-                                            day_name = dt_end.day_name()
-                                            df_dict['day_name'].append(day_name)
-                                            i += 1
+                                i += 1
 
-                                    elif recurrence_data['FREQ'] == 'WEEKLY':
-                                        repeat_days_abbr = recurrence_data.get(
-                                            'BYDAY', []).split(',')
-                                        repeat_days = [weekday_abbr[day]
-                                                       for day in repeat_days_abbr]
-                                        i = 0
-                                        while i < (count - 1):
-                                            possible_days = repeat_days.copy()
-                                            current_day_name = dt_start.day_name()
-                                            current_day_idx = self.find_day_name_index(
-                                                current_day_name)
-                                            possible_days_indices = [self.find_day_name_index(
-                                                day) for day in possible_days]
-                                            day_distances = [
-                                                (possible_day_idx - current_day_idx) for possible_day_idx in possible_days_indices]
-                                            for j, distance in enumerate(day_distances):
-                                                if distance <= 0:
-                                                    day_distances[j] += 7
-                                            interval = min(day_distances)
+                        elif recurrence_data['FREQ'][0] == 'WEEKLY':
+                            repeat_days_abbr = recurrence_data.get(
+                                'BYDAY', [])
+                            repeat_days = [self.weekday_abbr[day]
+                                           for day in repeat_days_abbr]
+                            i = 0
+                            while i < (count - 1):
+                                possible_days = repeat_days.copy()
+                                current_day_name = dt_start.day_name()
+                                current_day_idx = self.find_day_name_index(
+                                    current_day_name)
+                                possible_days_indices = [self.find_day_name_index(
+                                    day) for day in possible_days]
+                                day_distances = [
+                                    (possible_day_idx - current_day_idx) for possible_day_idx in possible_days_indices]
+                                for j, distance in enumerate(day_distances):
+                                    if distance <= 0:
+                                        day_distances[j] += 7
+                                interval = min(day_distances)
 
-                                            dt_start += pd.Timedelta(
-                                                days=interval)
-                                            dt_end += pd.Timedelta(days=interval)
-                                            if dt_start in excluded_dates:
-                                                i += 1
-                                                continue
-                                            df_dict['title'].append(title)
-                                            df_dict['category'].append(category)
-                                            df_dict['start'].append(dt_start)
-                                            df_dict['end'].append(dt_end)
-                                            day_name = dt_end.day_name()
-                                            df_dict['day_name'].append(day_name)
-                                            i += 1
+                                dt_start += pd.Timedelta(
+                                    days=interval)
+                                dt_end += pd.Timedelta(days=interval)
+                                if dt_start in excluded_dates:
+                                    i += 1
+                                    continue
+                                df_dict['title'].append(title)
+                                df_dict['categories'].append(categories)
+                                df_dict['start'].append(dt_start)
+                                df_dict['end'].append(dt_end)
+                                day_name = dt_end.day_name()
+                                df_dict['day_name'].append(day_name)
+                                i += 1
 
-                                    elif recurrence_data['FREQ'] == 'MONTHLY':
-                                        pass
+                        elif recurrence_data['FREQ'][0] == 'MONTHLY':
+                            pass
 
-                                    elif recurrence_data['FREQ'] == 'YEARLY':
-                                        pass
-                            in_event = False
+                        elif recurrence_data['FREQ'][0] == 'YEARLY':
+                            pass
 
-                df = pd.DataFrame(df_dict)
-                df['duration'] = (df['end'] - df['start']) / \
-                    pd.Timedelta(hours=1)
-                if self.events_df is None:
-                    self.events_df = df
-                else:
-                    self.events_df = self.events_df.append(
-                        df, ignore_index=True)
+        df = pd.DataFrame(df_dict)
+        df['duration'] = (df['end'] - df['start']) / \
+            pd.Timedelta(hours=1)
+        if self.events_df is None:
+            self.events_df = df
+        else:
+            self.events_df = self.events_df.append(
+                df, ignore_index=True)
         self.update_week_df()
 
 
