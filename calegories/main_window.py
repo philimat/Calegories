@@ -16,7 +16,8 @@ class MainWindow(QtWidgets.QMainWindow):
         super(MainWindow, self).__init__()
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
-        self.current_date = pd.to_datetime("today").tz_localize(tz='US/Central')
+        self.tz = 'US/Central'
+        self.current_date = pd.to_datetime("today").tz_localize(tz=self.tz)
         self.reference_date = self.current_date.replace(
             hour=0, minute=0, second=0, microsecond=0)
         self.ui.nextWeekButton.clicked.connect(self.show_next_week)
@@ -160,9 +161,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     categories = ''.join(
                         [str(cat) for cat in categories.cats])
                     dt_start = pd.Timestamp(
-                        component.get('DTSTART', None).dt)
+                        component.get('DTSTART', None).dt).tz_convert(tz=self.tz)
                     dt_end = pd.Timestamp(
-                        component.get('DTEND', None).dt)
+                        component.get('DTEND', None).dt).tz_convert(tz=self.tz)
                     day_name = dt_start.day_name()
 
                     df_dict['title'].append(title)
@@ -174,6 +175,9 @@ class MainWindow(QtWidgets.QMainWindow):
                     recurrence_data = component.get('RRULE', {})
                     if recurrence_data:
                         excluded_dates = component.get('EXDATE', [])
+                        if excluded_dates:
+                            excluded_dates = [pd.Timestamp(
+                                ex_date.dt) for ex_date in excluded_dates.dts]
                         interval = recurrence_data.get('INTERVAL', [1])[0]
                         count = recurrence_data.get('COUNT', None)[0]
                         if count is None:
