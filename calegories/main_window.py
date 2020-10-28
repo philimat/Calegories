@@ -182,6 +182,8 @@ class MainWindow(QtWidgets.QMainWindow):
                         count = recurrence_data.get('COUNT', [None])[0]
                         by_day = recurrence_data.get(
                             'BYDAY', [])
+                        by_set_pos = recurrence_data.get(
+                            'BYSETPOS', [])
                         by_month_day = recurrence_data.get(
                             'BYMONTHDAY', [None])[0]
                         by_month = recurrence_data.get(
@@ -266,15 +268,20 @@ class MainWindow(QtWidgets.QMainWindow):
                             else:
                                 repeat_days = []
                                 day_instances = []
-                                for day in by_day:
-                                    if len(day) > 3:
-                                        day_instances.append(int(day[:2]))
+                                if by_set_pos:
+                                    day_instances = by_set_pos
+                                    for day in by_day:
                                         repeat_days.append(
-                                            self.weekday_abbr[day[2:]])
-                                    else:
-                                        day_instances.append(int(day[0]))
+                                            self.weekday_abbr[day])
+                                else:
+                                    for day in by_day:
+                                        day_instances.append(int(day[:-2]))
                                         repeat_days.append(
-                                            self.weekday_abbr[day[1:]])
+                                            self.weekday_abbr[day[-2:]])
+
+                                if len(repeat_days) != len(day_instances):
+                                    day_instances = [day_instances[0]
+                                                     ] * len(repeat_days)
                                 repeat_days = dict(
                                     zip(repeat_days, day_instances))
                                 repeat_day_timestamps = self.get_repeat_day_timestamps(
@@ -318,7 +325,9 @@ class MainWindow(QtWidgets.QMainWindow):
         self.update_week_df()
 
     def get_repeat_day_timestamps(self, reference_date, repeat_day_dict):
-        day_occurances = dict(
+        month_occurances = dict(
+            zip(self.weekdays, [0] * len(self.weekdays)))
+        day_occurance = dict(
             zip(self.weekdays, [0] * len(self.weekdays)))
         repeat_day_timestamps = []
         first_day_of_month = reference_date - \
@@ -328,13 +337,21 @@ class MainWindow(QtWidgets.QMainWindow):
         days_in_month = first_day_of_month.days_in_month
         while i < days_in_month:
             scan_day = scan_date.day_name()
-            day_occurances[scan_day] += 1
-            if scan_day in repeat_day_dict.keys() and repeat_day_dict[scan_day] == day_occurances[scan_day]:
-                repeat_day_timestamps.append(
-                    scan_date)
-            elif scan_day in repeat_day_dict.keys() and (days_in_month - i) <= len(self.weekdays) and repeat_day_dict[scan_day] == -1:
-                repeat_day_timestamps.append(
-                    scan_date)
+            month_occurances[scan_day] += 1
+            scan_date = scan_date + pd.Timedelta(days=1)
+            i += 1
+        i = 0
+        scan_date = first_day_of_month
+        while i < days_in_month:
+            scan_day = scan_date.day_name()
+            day_occurance[scan_day] += 1
+            if scan_day in repeat_day_dict.keys():
+                if repeat_day_dict[scan_day] == day_occurance[scan_day]:
+                    repeat_day_timestamps.append(
+                        scan_date)
+                elif repeat_day_dict[scan_day] == (day_occurance[scan_day] - month_occurances[scan_day] - 1):
+                    repeat_day_timestamps.append(
+                        scan_date)
             scan_date = scan_date + pd.Timedelta(days=1)
             i += 1
         repeat_day_timestamps.sort()
