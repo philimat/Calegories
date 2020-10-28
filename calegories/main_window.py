@@ -179,7 +179,13 @@ class MainWindow(QtWidgets.QMainWindow):
                             excluded_dates = [pd.Timestamp(
                                 ex_date.dt) for ex_date in excluded_dates.dts]
                         interval = recurrence_data.get('INTERVAL', [1])[0]
-                        count = recurrence_data.get('COUNT', None)[0]
+                        count = recurrence_data.get('COUNT', [None])[0]
+                        by_day = recurrence_data.get(
+                            'BYDAY', [])
+                        by_month_day = recurrence_data.get(
+                            'BYMONTHDAY', [None])[0]
+                        by_month = recurrence_data.get(
+                            'BYMONTH', [None])[0]
                         if count is None:
                             # Only support events that have counts at this time
                             break
@@ -202,10 +208,8 @@ class MainWindow(QtWidgets.QMainWindow):
                                 i += 1
 
                         elif recurrence_data['FREQ'][0] == 'WEEKLY':
-                            repeat_days_abbr = recurrence_data.get(
-                                'BYDAY', [])
                             repeat_days = [self.weekday_abbr[day]
-                                           for day in repeat_days_abbr]
+                                           for day in by_day]
                             i = 0
                             while i < (count - 1):
                                 possible_days = repeat_days.copy()
@@ -237,7 +241,68 @@ class MainWindow(QtWidgets.QMainWindow):
                                 i += 1
 
                         elif recurrence_data['FREQ'][0] == 'MONTHLY':
-                            pass
+                            if by_month_day is not None:
+                                i = 0
+                                while i < (count - 1):
+                                    if by_month_day:
+                                        month_shift = pd.DateOffset(
+                                            months=interval)
+                                        day_shift = pd.Timedelta(
+                                            days=(dt_start.day - by_month_day))
+                                        dt_start += month_shift
+                                        dt_start += day_shift
+                                        dt_end += month_shift
+                                        dt_end += day_shift
+                                        if dt_start in excluded_dates:
+                                            i += 1
+                                            continue
+                                        df_dict['title'].append(title)
+                                        df_dict['categories'].append(categories)
+                                        df_dict['start'].append(dt_start)
+                                        df_dict['end'].append(dt_end)
+                                        day_name = dt_end.day_name()
+                                        df_dict['day_name'].append(day_name)
+                                        i += 1
+                            else:
+                                repeat_days = []
+                                day_instances = []
+                                for day in by_day:
+                                    if len(day) > 3:
+                                        day_instances.append(int(day[:2]))
+                                        repeat_days.append(
+                                            self.weekday_abbr[day[2:]])
+                                    else:
+                                        day_instances.append(int(day[0]))
+                                        repeat_days.append(
+                                            self.weekday_abbr[day[1:]])
+                                repeat_days = dict(
+                                    zip(repeat_days, day_instances))
+                                repeat_day_timestamps = self.get_repeat_day_timestamps(
+                                    dt_start, repeat_days)
+                                first_day_of_month = dt_start - \
+                                    pd.Timedelta(days=dt_start.day - 1)
+
+                                i = 0
+                                while i < (count - 1):
+                                    for repeat_day in repeat_day_timestamps:
+                                        if repeat_day > dt_start:
+                                            shift = repeat_day.dayofyear - dt_start.dayofyear
+                                            dt_start += pd.Timedelta(
+                                                days=shift)
+                                            dt_end += pd.Timedelta(days=shift)
+                                            if dt_start in excluded_dates:
+                                                i += 1
+                                                continue
+                                            df_dict['title'].append(title)
+                                            df_dict['categories'].append(
+                                                categories)
+                                            df_dict['start'].append(dt_start)
+                                            df_dict['end'].append(dt_end)
+                                            day_name = dt_end.day_name()
+                                            df_dict['day_name'].append(day_name)
+                                            i += 1
+                                    repeat_day_timestamps = self.get_repeat_day_timestamps(first_day_of_month + pd.DateOffset(
+                                        months=interval), repeat_days)
 
                         elif recurrence_data['FREQ'][0] == 'YEARLY':
                             pass
@@ -251,6 +316,29 @@ class MainWindow(QtWidgets.QMainWindow):
             self.events_df = self.events_df.append(
                 df, ignore_index=True)
         self.update_week_df()
+
+    def get_repeat_day_timestamps(self, reference_date, repeat_day_dict):
+        day_occurances = dict(
+            zip(self.weekdays, [0] * len(self.weekdays)))
+        repeat_day_timestamps = []
+        first_day_of_month = reference_date - \
+            pd.Timedelta(days=reference_date.day - 1)
+        i = 0
+        scan_date = first_day_of_month
+        days_in_month = first_day_of_month.days_in_month
+        while i < days_in_month:
+            scan_day = scan_date.day_name()
+            day_occurances[scan_day] += 1
+            if scan_day in repeat_day_dict.keys() and repeat_day_dict[scan_day] == day_occurances[scan_day]:
+                repeat_day_timestamps.append(
+                    scan_date)
+            elif scan_day in repeat_day_dict.keys() and (days_in_month - i) <= len(self.weekdays) and repeat_day_dict[scan_day] == -1:
+                repeat_day_timestamps.append(
+                    scan_date)
+            scan_date = scan_date + pd.Timedelta(days=1)
+            i += 1
+        repeat_day_timestamps.sort()
+        return repeat_day_timestamps
 
 
 if __name__ == '__main__':
