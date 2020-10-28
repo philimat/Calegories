@@ -219,11 +219,12 @@ class MainWindow(QtWidgets.QMainWindow):
                                 for j, distance in enumerate(day_distances):
                                     if distance <= 0:
                                         day_distances[j] += 7
-                                interval = min(day_distances)
+                                day_interval = min(day_distances)
+                                shift = interval * day_interval
 
                                 dt_start += pd.Timedelta(
-                                    days=interval)
-                                dt_end += pd.Timedelta(days=interval)
+                                    days=shift)
+                                dt_end += pd.Timedelta(days=shift)
                                 if dt_start in excluded_dates:
                                     i += 1
                                     continue
