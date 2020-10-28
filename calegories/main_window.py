@@ -308,8 +308,10 @@ class MainWindow(QtWidgets.QMainWindow):
                                             day_name = dt_end.day_name()
                                             df_dict['day_name'].append(day_name)
                                             i += 1
-                                    repeat_day_timestamps = self.get_repeat_day_timestamps(first_day_of_month + pd.DateOffset(
-                                        months=interval), repeat_days)
+                                    first_day_of_month = first_day_of_month + \
+                                        pd.DateOffset(months=interval)
+                                    repeat_day_timestamps = self.get_repeat_day_timestamps(
+                                        first_day_of_month, repeat_days)
 
                         elif recurrence_data['FREQ'][0] == 'YEARLY':
                             pass
